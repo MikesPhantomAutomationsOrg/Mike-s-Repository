@@ -1,84 +1,83 @@
-import { supabase } from '../supabase/supabase';
-import { WebhookResponse } from '../types';
+import { useState } from 'react';
+import { PDFUpload } from '../components/PDFUpload';
+import { DynamicSelectionView } from '../components/DynamicSelectionView';
+import { pollPdfResult } from '../utils/pollPdfResult';
+import { uploadPDFToStorage } from '../utils/uploadPDF';
 
-const POLL_INTERVAL_MS = 3000;
-const TIMEOUT_MS = 5 * 60 * 1000;
+export default function Startseite() {
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pdfResult, setPdfResult] = useState(null);
+  const [showDynamicView, setShowDynamicView] = useState(false);
 
-export interface PdfPollResult {
-  status: 'pending' | 'processing' | 'done' | 'error';
-  result?: WebhookResponse;
-  error?: string;
-}
+  const handleFileSelected = async (file: File) => {
+    setIsLoading(true);
+    setError(null);
 
-function deepParseResult(raw: any): WebhookResponse {
-  // 1️⃣ already object
-  if (typeof raw === 'object') return raw;
+    try {
+      const { jobId } = await uploadPDFToStorage(file);
+      console.log('📤 Datei hochgeladen, jobId:', jobId);
 
-  // 2️⃣ string → parse
-  if (typeof raw === 'string') {
-    const first = JSON.parse(raw);
+      const result = await pollPdfResult(jobId);
 
-    // 3️⃣ still string? parse again
-    if (typeof first === 'string') {
-      return JSON.parse(first);
-    }
-
-    return first;
-  }
-
-  throw new Error('Unbekanntes Result-Format');
-}
-
-export async function pollPdfResult(jobId: string): Promise<PdfPollResult> {
-  const start = Date.now();
-  console.log('🔁 Polling gestartet für:', jobId);
-
-  while (Date.now() - start < TIMEOUT_MS) {
-    const { data, error } = await supabase
-      .from('pdf_results')
-      .select('status, result, error')
-      .eq('id', jobId)
-      .maybeSingle();
-
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    if (!data) {
-      await sleep(POLL_INTERVAL_MS);
-      continue;
-    }
-
-    console.log('📄 DB Status:', data.status);
-
-    if (data.status === 'done') {
-      try {
-        const parsed = deepParseResult(data.result);
-
-        console.log('✅ JSON erfolgreich geparst');
-        return {
-          status: 'done',
-          result: parsed,
-        };
-      } catch (e) {
-        console.error('❌ JSON Parse Fehler:', data.result);
-        throw new Error('Result ist kein gültiges JSON');
+      if (result.status === 'done' && result.result) {
+        setPdfResult(result.result);
+        setShowDynamicView(true);
+      } else if (result.status === 'error') {
+        setError(result.error || 'PDF-Verarbeitung fehlgeschlagen');
       }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ein Fehler ist aufgetreten');
+      console.error('❌ Fehler:', err);
+    } finally {
+      setIsLoading(false);
     }
+  };
 
-    if (data.status === 'error') {
-      return {
-        status: 'error',
-        error: data.error || 'Unbekannter Fehler',
-      };
-    }
-
-    await sleep(POLL_INTERVAL_MS);
+  if (showDynamicView && pdfResult) {
+    return (
+      <DynamicSelectionView
+        pdfResult={pdfResult}
+        onReset={() => {
+          setShowDynamicView(false);
+          setPdfResult(null);
+        }}
+      />
+    );
   }
 
-  throw new Error('⏱️ Timeout: Verarbeitung > 5 Minuten');
-}
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
+      <div className="w-full max-w-2xl">
+        <div className="bg-white rounded-lg shadow-lg p-8">
+          <div className="mb-8">
+            <h1 className="text-4xl font-bold text-gray-900 mb-2">
+              Regalprüfung
+            </h1>
+            <p className="text-gray-600">
+              Laden Sie einen PDF-Prüfbericht hoch, um die Verarbeitung zu starten
+            </p>
+          </div>
 
-function sleep(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+          <PDFUpload onFileSelected={handleFileSelected} isLoading={isLoading} />
+
+          {isLoading && (
+            <div className="mt-6 flex justify-center">
+              <div className="flex flex-col items-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+                <p className="mt-4 text-gray-600">Verarbeitung läuft...</p>
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-red-700 font-semibold">Fehler</p>
+              <p className="text-red-600 text-sm mt-1">{error}</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
