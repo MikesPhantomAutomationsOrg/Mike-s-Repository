@@ -1,9 +1,3 @@
-/home/project/src/utils/pollPdfResult.ts
-
-
-
-
-
 import { supabase } from '../supabase/supabase';
 import { WebhookResponse } from '../types';
 
