@@ -3,12 +3,14 @@ import { PDFUpload } from '../components/PDFUpload';
 import { DynamicSelectionView } from '../components/DynamicSelectionView';
 import { pollPdfResult } from '../utils/pollPdfResult';
 import { uploadPDFToStorage } from '../utils/uploadPDF';
+import { DynamicSelectionData } from '../types';
 
 export default function Startseite() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [pdfResult, setPdfResult] = useState(null);
+  const [pdfResult, setPdfResult] = useState<DynamicSelectionData | null>(null);
   const [showDynamicView, setShowDynamicView] = useState(false);
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
 
   const handleFileSelected = async (file: File) => {
     setIsLoading(true);
@@ -34,15 +36,50 @@ export default function Startseite() {
     }
   };
 
+  const handleToggleItem = (id: string) => {
+    const newSelected = new Set(selectedItems);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedItems(newSelected);
+  };
+
+  const handleToggleAll = () => {
+    if (pdfResult) {
+      if (selectedItems.size === pdfResult.items.length) {
+        setSelectedItems(new Set());
+      } else {
+        setSelectedItems(new Set(pdfResult.items.map(item => item.id)));
+      }
+    }
+  };
+
   if (showDynamicView && pdfResult) {
     return (
-      <DynamicSelectionView
-        pdfResult={pdfResult}
-        onReset={() => {
-          setShowDynamicView(false);
-          setPdfResult(null);
-        }}
-      />
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-4">
+        <div className="mb-6">
+          <button
+            onClick={() => {
+              setShowDynamicView(false);
+              setPdfResult(null);
+              setSelectedItems(new Set());
+            }}
+            className="px-4 py-2 text-blue-600 hover:text-blue-700 font-medium"
+          >
+            ← Zurück
+          </button>
+        </div>
+        <div className="bg-white rounded-lg shadow-lg p-8">
+          <DynamicSelectionView
+            data={pdfResult}
+            selectedItems={selectedItems}
+            onToggleItem={handleToggleItem}
+            onToggleAll={handleToggleAll}
+          />
+        </div>
+      </div>
     );
   }
 
